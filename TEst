@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>WEAO Pro Monitor — Full</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root {
+      --menu-width: 640px;
+      --menu-right: 20px;
+      --menu-top-offset: 8px;
+      --menu-z: 99999;
+    }
+
+    body { -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
+
+    .glass {
+      background: rgba(255,255,255,0.04);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .hidden-section { display: none !important; }
+    .small-muted { font-size: 0.8rem; opacity: 0.7; }
+    .debug-box {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Courier New", monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      max-height: 220px;
+      overflow:auto;
+      background: rgba(0,0,0,0.45);
+      padding:8px;
+      border-radius:6px;
+    }
+
+    /* Portal container (default hidden; script will create/position) */
+    #rbxMenuPortal { display: none; }
+
+    /* Fallback: if portal not used, ensure menu floats above */
+    #rbxMenu {
+      width: var(--menu-width);
+      z-index: calc(var(--menu-z) - 1);
+    }
+
+    /* Quick CSS fix for stacking issues (keeps menu visible) */
+    .rbx-menu-fixed {
+      position: fixed !important;
+      right: var(--menu-right) !important;
+      top: calc(var(--header-height,72px) + var(--menu-top-offset)) !important;
+      width: var(--menu-width) !important;
+      z-index: var(--menu-z) !important;
+      transform: none !important;
+      will-change: auto !important;
+    }
+
+    /* Small responsive tweak */
+    @media (max-width: 720px) {
+      :root { --menu-width: 92vw; --menu-right: 4vw; }
+      .rbx-menu-fixed { right: var(--menu-right) !important; width: var(--menu-width) !important; left: auto; }
+    }
+  </style>
+</head>
+<body class="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-slate-200 min-h-screen">
+
+  <!-- Header -->
+  <header id="mainHeader" class="flex flex-col lg:flex-row items-start lg:items-center justify-between px-6 py-4 bg-slate-950/70 backdrop-blur-md border-b border-slate-800 gap-4">
+    <div class="flex items-center gap-4 w-full lg:w-auto">
+      <h1 class="text-3xl font-bold text-white">WEAO Pro Monitor</h1>
+
+      <!-- RBX summary -->
+      <div id="rbxSummary" class="ml-4 hidden glass p-3 rounded-lg">
+        <div class="flex gap-3 items-center">
+          <div class="text-sm opacity-70">RBX Versions</div>
+          <div id="rbxWindowsBadge" class="px-2 py-1 rounded bg-blue-700 text-xs">Windows: —</div>
+          <div id="rbxMacBadge" class="px-2 py-1 rounded bg-pink-700 text-xs">Mac: —</div>
+        </div>
+        <div id="rbxSummaryDetails" class="mt-2 text-xs small-muted"></div>
+      </div>
+    </div>
+
+    <div class="flex flex-col sm:flex-row gap-3 w-full lg:w-auto items-stretch">
+      <input id="searchBar" type="text" placeholder="Search exploits..." 
+             class="flex-1 px-4 py-2 rounded-lg bg-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-purple-500" />
+
+      <select id="filterSelect" class="px-4 py-2 rounded-lg bg-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-green-500">
+        <option value="all">Show All</option>
+        <option value="windows">Windows</option>
+        <option value="mac">Mac</option>
+        <option value="android">Android</option>
+        <option value="ios">iOS</option>
+        <option value="external">External</option>
+      </select>
+
+      <!-- RBX menu trigger -->
+      <div class="relative">
+        <button id="rbxMenuBtn" class="px-4 py-2 rounded-lg bg-slate-800 text-white hover:bg-slate-700">RBX Versions</button>
+        <!-- Menu element (will be moved to portal by script) -->
+        <div id="rbxMenu" class="glass p-4 rounded-lg shadow-lg hidden z-50">
+          <div class="flex items-center justify-between mb-3">
+            <div class="font-semibold">Roblox Versions</div>
+            <div class="text-xs opacity-60">Current / Future / Past</div>
+          </div>
+
+          <div id="rbxWindowsList" class="mb-4">
+            <div class="text-sm font-medium text-blue-300 mb-2">Windows (current / future / past)</div>
+            <div id="rbxWindowsItems" class="space-y-2"></div>
+          </div>
+
+          <div id="rbxMacList" class="mb-4">
+            <div class="text-sm font-medium text-pink-300 mb-2">Mac (current / future / past)</div>
+            <div id="rbxMacItems" class="space-y-2"></div>
+          </div>
+
+          <div id="rbxOtherList" class="mb-2">
+            <div class="text-sm font-medium text-green-300 mb-2">Mobile (Android / iOS)</div>
+            <div id="rbxMobileItems" class="space-y-2"></div>
+          </div>
+
+          <div class="mt-4 text-xs small-muted">Click "Download" if a download link is provided by the API.</div>
+
+          <hr class="my-3 border-slate-800" />
+
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <div class="text-sm font-medium">Debug (raw responses)</div>
+              <div class="flex gap-2">
+                <button id="toggleDebug" class="px-2 py-1 text-xs rounded bg-slate-700">Toggle</button>
+                <button id="refreshRbx" class="px-2 py-1 text-xs rounded bg-slate-700">Refresh</button>
+              </div>
+            </div>
+            <div id="debugPanel" class="hidden space-y-2">
+              <div class="text-xs small-muted">/api/versions/current</div>
+              <div id="debugCurrent" class="debug-box">loading…</div>
+              <div class="text-xs small-muted mt-2">/api/versions/future</div>
+              <div id="debugFuture" class="debug-box">loading…</div>
+              <div class="text-xs small-muted mt-2">/api/versions/past</div>
+              <div id="debugPast" class="debug-box">loading…</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main content -->
+  <main class="p-8 space-y-12">
+    <section id="section-windows">
+      <h2 class="text-2xl font-semibold text-blue-400 mb-6">Windows Script Executor Exploits</h2>
+      <div id="windowsExecutor" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+    </section>
+
+    <section id="section-mac">
+      <h2 class="text-2xl font-semibold text-pink-400 mb-6">Mac Script Executor Exploits</h2>
+      <div id="macExecutor" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+    </section>
+
+    <section id="section-android">
+      <h2 class="text-2xl font-semibold text-green-400 mb-6">Android Script Executor Exploits</h2>
+      <div id="androidExecutor" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+    </section>
+
+    <section id="section-ios">
+      <h2 class="text-2xl font-semibold text-yellow-400 mb-6">iOS Script Executor Exploits</h2>
+      <div id="iosExecutor" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+    </section>
+
+    <section id="section-external">
+      <h2 class="text-2xl font-semibold text-purple-400 mb-6">Windows External Exploits</h2>
+      <div id="windowsExternal" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+    </section>
+
+    <div id="emptyState" class="text-center opacity-60 hidden">No exploits to display.</div>
+  </main>
+
+  <!-- sUNC Modal -->
+  <dialog id="suncModal" class="glass text-white p-6 rounded-2xl w-11/12 max-w-2xl">
+    <h2 id="modalTitle" class="text-2xl font-bold mb-4">sUNC Details</h2>
+    <div id="modalContent" class="space-y-4 text-sm max-h-[50vh] overflow-y-auto"></div>
+    <div class="mt-6 flex justify-end gap-3">
+      <button id="closeModal" class="px-4 py-2 rounded bg-slate-700 hover:bg-slate-600">Close</button>
+    </div>
+  </dialog>
+
+  <script>
+    /* ---------- Config ---------- */
+    const domains = ['https://weao.xyz','https://weao.gg','https://whatexpsare.online','https://whatexploitsaretra.sh'];
+    let allData = [];
+
+    /* ---------- Helpers ---------- */
+    function safe(val, fallback = 'N/A') { if (val === null || val === undefined) return fallback; return String(val); }
+
+    // Improved fetchWithFailover: tries absolute domains, returns parsed JSON or wrapper
+    async function fetchWithFailover(pathOrUrl) {
+      const isAbsolute = /^https?:\/\//i.test(pathOrUrl);
+      const attempts = isAbsolute ? [pathOrUrl] : domains.map(d => `${d}${pathOrUrl}`);
+      let lastErr = null;
+      for (const url of attempts) {
+        try {
+          const res = await fetch(url, { method: 'GET', mode: 'cors', cache: 'no-cache' });
+          if (!res.ok) {
+            lastErr = new Error(`HTTP ${res.status} from ${url}`);
+            continue;
+          }
+          const text = await res.text();
+          try {
+            return JSON.parse(text || '{}');
+          } catch (e) {
+            return { __raw_text: text };
+          }
+        } catch (err) {
+          lastErr = err;
+          continue;
+        }
+      }
+      const origin = (window.location && window.location.origin) ? window.location.origin : 'null';
+      const isFile = origin === 'null' || origin.startsWith('file://');
+      const hint = isFile ? 'Serve the page via HTTP (Live Server) to avoid origin null CORS issues.' : 'If CORS blocked, server must allow your origin via Access-Control-Allow-Origin.';
+      const err = new Error(`All domains failed or network error. ${hint}`);
+      err.hint = hint;
+      err.last = lastErr;
+      throw err;
+    }
+
+    /* ---------- RBX menu portal relocation (fix stacking) ---------- */
+    (function createRbxPortal() {
+      const menu = document.getElementById('rbxMenu');
+      if (!menu) return;
+      // Create portal wrapper
+      const portal = document.createElement('div');
+      portal.id = 'rbxMenuPortal';
+      portal.style.position = 'fixed';
+      portal.style.right = 'var(--menu-right)';
+      portal.style.zIndex = getComputedStyle(document.documentElement).getPropertyValue('--menu-z') || '99999';
+      portal.style.width = getComputedStyle(document.documentElement).getPropertyValue('--menu-width') || '640px';
+      portal.style.pointerEvents = 'auto';
+      portal.style.display = 'none'; // hidden until opened
+      document.body.appendChild(portal);
+      // Move menu into portal
+      menu.parentElement && menu.parentElement.removeChild(menu);
+      portal.appendChild(menu);
+      // Make menu relative inside portal
+      menu.style.position = 'relative';
+      menu.style.right = '0';
+      menu.style.top = '0';
+      // Update top on resize to sit below header
+      function updateTop() {
+        const header = document.getElementById('mainHeader');
+        const rect = header ? header.getBoundingClientRect() : { bottom: 72 };
+        const top = Math.max(8, Math.ceil(rect.bottom + 8));
+        portal.style.top = `${top}px`;
+      }
+      window.addEventListener('resize', updateTop);
+      updateTop();
+
+      // Expose helper to show/hide portal
+      window.__rbxPortal = { portal, menu, updateTop };
+    })();
+
+    /* ---------- RBX Versions loader (current/future/past) ---------- */
+    const debugCurrentEl = document.getElementById('debugCurrent');
+    const debugFutureEl = document.getElementById('debugFuture');
+    const debugPastEl = document.getElementById('debugPast');
+    const rbxWindowsItems = document.getElementById('rbxWindowsItems');
+    const rbxMacItems = document.getElementById('rbxMacItems');
+    const rbxMobileItems = document.getElementById('rbxMobileItems');
+    const rbxWindowsBadge = document.getElementById('rbxWindowsBadge');
+    const rbxMacBadge = document.getElementById('rbxMacBadge');
+    const rbxSummaryEl = document.getElementById('rbxSummary');
+    const rbxSummaryDetails = document.getElementById('rbxSummaryDetails');
+
+    async function loadAllRbxVersions() {
+      const endpoints = { current: '/api/versions/current', future: '/api/versions/future', past: '/api/versions/past' };
+      const results = { current: null, future: null, past: null };
+
+      await Promise.all(Object.keys(endpoints).map(async key => {
+        try {
+          const data = await fetchWithFailover(endpoints[key]);
+          results[key] = { ok: true, data };
+        } catch (err) {
+          results[key] = { ok: false, error: err };
+        }
+      }));
+
+      debugCurrentEl.textContent = results.current && results.current.ok ? JSON.stringify(results.current.data, null, 2) : (results.current && results.current.error ? `ERROR: ${results.current.error.message}\n\nHINT: ${results.current.error.hint || ''}` : 'no response');
+      debugFutureEl.textContent  = results.future  && results.future.ok  ? JSON.stringify(results.future.data, null, 2)  : (results.future  && results.future.error  ? `ERROR: ${results.future.error.message}\n\nHINT: ${results.future.error.hint || ''}` : 'no response');
+      debugPastEl.textContent    = results.past    && results.past.ok    ? JSON.stringify(results.past.data, null, 2)    : (results.past    && results.past.error    ? `ERROR: ${results.past.error.message}\n\nHINT: ${results.past.error.hint || ''}` : 'no response');
+
+      const normalized = { current: [], future: [], past: [] };
+
+      function pushIf(platform, version, date, bucket) {
+        if (!version) return;
+        normalized[bucket].push({ platform, version, updatedDate: date || '', source: bucket });
+      }
+
+      function normalizeFromRaw(raw, bucket) {
+        if (!raw || !raw.ok) return;
+        const data = raw.data;
+        if (!data) return;
+        if (data.__raw_text) {
+          const txt = data.__raw_text;
+          const matches = txt.match(/version-[0-9a-f]{6,}/ig);
+          if (matches && matches.length) matches.forEach(m => pushIf('Windows', m, '', bucket));
+          return;
+        }
+        if (typeof data === 'object') {
+          const W = data.Windows || data.windows || null;
+          const WD = data.WindowsDate || data.windowsDate || null;
+          const M = data.Mac || data.mac || null;
+          const MD = data.MacDate || data.macDate || null;
+          const A = data.Android || data.android || null;
+          const AD = data.AndroidDate || data.androidDate || null;
+          const I = data.iOS || data.IOS || data.ios || null;
+          const ID = data.iOSDate || data.iOSDate || data.iosDate || null;
+
+          pushIf('Windows', W, WD, bucket);
+          pushIf('Mac', M, MD, bucket);
+          pushIf('Android', A, AD, bucket);
+          pushIf('iOS', I, ID, bucket);
+
+          if (Array.isArray(data.WindowsResponse)) data.WindowsResponse.forEach(it => pushIf('Windows', it.version || it.id || it.name, it.updatedDate || it.updated_date, bucket));
+          if (Array.isArray(data.MacResponse)) data.MacResponse.forEach(it => pushIf('Mac', it.version || it.id || it.name, it.updatedDate || it.updated_date, bucket));
+        }
+      }
+
+      normalizeFromRaw(results.current, 'current');
+      normalizeFromRaw(results.future, 'future');
+      normalizeFromRaw(results.past, 'past');
+
+      const perPlatform = { Windows: [], Mac: [], Android: [], iOS: [] };
+      ['current','future','past'].forEach(bucket => {
+        normalized[bucket].forEach(item => {
+          perPlatform[item.platform] = perPlatform[item.platform] || [];
+          perPlatform[item.platform].push(item);
+        });
+      });
+
+      function renderList(container, list, emptyText = 'No versions available.') {
+        container.innerHTML = '';
+        if (!list || list.length === 0) {
+          container.innerHTML = `<div class="text-xs opacity-60">${emptyText}</div>`;
+          return;
+        }
+        list.forEach(it => {
+          const row = document.createElement('div');
+          row.className = 'flex items-center justify-between gap-3 p-2 bg-slate-900/40 rounded';
+          row.innerHTML = `<div><div class="font-medium text-sm">${safe(it.version)}</div><div class="text-xs small-muted">${safe(it.source)} • Updated: ${safe(it.updatedDate)}</div></div>`;
+          container.appendChild(row);
+        });
+      }
+
+      renderList(rbxWindowsItems, perPlatform.Windows, 'No Windows versions available.');
+      renderList(rbxMacItems, perPlatform.Mac, 'No Mac versions available.');
+      renderList(rbxMobileItems, perPlatform.Android.concat(perPlatform.iOS || []), 'No mobile versions available.');
+
+      rbxWindowsBadge.textContent = perPlatform.Windows[0] ? `Windows: ${perPlatform.Windows[0].version}` : 'Windows: —';
+      rbxMacBadge.textContent = perPlatform.Mac[0] ? `Mac: ${perPlatform.Mac[0].version}` : 'Mac: —';
+      rbxSummaryEl.classList.remove('hidden');
+      rbxSummaryDetails.textContent = `${perPlatform.Windows[0] ? perPlatform.Windows[0].version + ' • ' + (perPlatform.Windows[0].updatedDate || 'N/A') : 'Windows: none'} — ${perPlatform.Mac[0] ? perPlatform.Mac[0].version + ' • ' + (perPlatform.Mac[0].updatedDate || 'N/A') : 'Mac: none'}`;
+
+      console.log('RBX normalized', perPlatform, normalized, results);
+    }
+
+    document.getElementById('rbxMenuBtn').addEventListener('click', () => {
+      const portal = window.__rbxPortal && window.__rbxPortal.portal;
+      if (portal) {
+        portal.style.display = portal.style.display === 'none' ? 'block' : 'none';
+        // ensure portal top is updated (header may have changed)
+        window.__rbxPortal.updateTop && window.__rbxPortal.updateTop();
+      } else {
+        // fallback: toggle menu visibility and apply fixed class
+        const menu = document.getElementById('rbxMenu');
+        menu.classList.toggle('hidden');
+        menu.classList.toggle('rbx-menu-fixed');
+      }
+    });
+
+    document.getElementById('toggleDebug').addEventListener('click', () => {
+      document.getElementById('debugPanel').classList.toggle('hidden');
+    });
+    document.getElementById('refreshRbx').addEventListener('click', () => loadAllRbxVersions());
+
+    /* ---------- Exploit rendering (full features restored) ---------- */
+    const categoryMap = {
+      "Volt":"windowsExecutor","Potassium":"windowsExecutor","Wave":"windowsExecutor",
+      "Synapse Z":"windowsExecutor","Seliware":"windowsExecutor","Madium":"windowsExecutor",
+      "Cosmic":"windowsExecutor","Velocity":"windowsExecutor","SirHurt":"windowsExecutor",
+      "Solara":"windowsExecutor","Xeno":"windowsExecutor",
+      "MacSploit":"macExecutor","Opiumware":"macExecutor",
+      "Delta":"androidExecutor","Cryptic":"androidExecutor","Vega X":"androidExecutor","Codex":"androidExecutor",
+      "Delta (iOS)":"iosExecutor",
+      "Serotonin":"windowsExternal","Severe":"windowsExternal","RbxCli":"windowsExternal",
+      "Lumen":"windowsExternal","Matcha":"windowsExternal","Matrix Hub":"windowsExternal",
+      "Photon":"windowsExternal","DX9WARE V2":"windowsExternal"
+    };
+
+    function categorize(exp) {
+      if (!exp) return 'windowsExecutor';
+      if (exp.category) {
+        const c = String(exp.category).toLowerCase();
+        if (c.includes('mac')) return 'macExecutor';
+        if (c.includes('android')) return 'androidExecutor';
+        if (c.includes('ios')) return 'iosExecutor';
+        if (c.includes('external')) return 'windowsExternal';
+        if (c.includes('windows')) return 'windowsExecutor';
+      }
+      if (categoryMap[exp.title]) return categoryMap[exp.title];
+      const t = (exp.title || '').toLowerCase();
+      if (t.includes('mac')) return 'macExecutor';
+      if (t.includes('android')) return 'androidExecutor';
+      if (t.includes('ios')) return 'iosExecutor';
+      if (t.includes('external') || t.includes('dx9') || t.includes('rbxcli')) return 'windowsExternal';
+      return 'windowsExecutor';
+    }
+
+    function clearSections() {
+      ['windowsExecutor','macExecutor','androidExecutor','iosExecutor','windowsExternal'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = '';
+      });
+    }
+
+    function computeSuncPercentile(sunc) {
+      if (!sunc || !sunc.tests) return null;
+      const passed = Array.isArray(sunc.tests.passed) ? sunc.tests.passed.length : 0;
+      const failed = Array.isArray(sunc.tests.failed) ? sunc.tests.failed.length : 0;
+      const total = passed + failed;
+      if (total === 0) return null;
+      return Math.round((passed / total) * 100);
+    }
+
+    function createCardElement(exp) {
+      const statusType = (!('updateStatus' in exp) ? 'red' : (exp.detected ? 'green' : 'purple'));
+      const sunc = exp.sunc || {};
+      const suncPct = computeSuncPercentile(sunc);
+      const suncPercentileText = suncPct !== null ? `${suncPct}%` : null;
+
+      const card = document.createElement('article');
+      card.className = `glass p-6 rounded-2xl border-l-4 border-${statusType}-500 shadow-lg hover:shadow-xl cursor-pointer`;
+      card.dataset.title = exp.title || '';
+      card.dataset.suncScrap = sunc.suncScrap || '';
+      card.dataset.suncKey = sunc.suncKey || '';
+
+      const h = document.createElement('h3');
+      h.className = 'text-xl font-bold mb-2';
+      h.textContent = exp.title || 'Unknown';
+      card.appendChild(h);
+
+      const suncLine = document.createElement('p');
+      suncLine.className = 'text-sm opacity-80 mb-2';
+      suncLine.innerHTML = suncPercentileText ? `sUNC Pass Rate: <strong class="text-purple-300">${suncPercentileText}</strong>` : 'sUNC Pass Rate: <span class="opacity-60">N/A</span>';
+      card.appendChild(suncLine);
+
+      const meta1 = document.createElement('p');
+      meta1.className = 'text-xs opacity-60 mb-1';
+      meta1.textContent = `Version: ${safe(exp.version)}`;
+      card.appendChild(meta1);
+
+      const meta2 = document.createElement('p');
+      meta2.className = 'text-xs opacity-60 mb-2';
+      meta2.textContent = `Last updated: ${safe(exp.updatedDate || exp.updated_date || exp.updatedAt)}`;
+      card.appendChild(meta2);
+
+      const infoRow = document.createElement('div');
+      infoRow.className = 'flex flex-wrap gap-3 mb-4 text-xs';
+
+      const uncStatusSpan = document.createElement('span');
+      uncStatusSpan.className = 'px-2 py-1 rounded bg-slate-800 opacity-90';
+      const uncStatusVal = (typeof exp.uncStatus === 'boolean') ? (exp.uncStatus ? 'Yes' : 'No') : (exp.uncStatus ? 'Yes' : 'N/A');
+      uncStatusSpan.textContent = `sUNC Supported: ${uncStatusVal}`;
+      infoRow.appendChild(uncStatusSpan);
+
+      const detectedSpan = document.createElement('span');
+      detectedSpan.className = `px-2 py-1 rounded ${exp.detected ? 'bg-red-700' : 'bg-green-700'}`;
+      detectedSpan.textContent = exp.detected ? 'Detected' : 'Undetected';
+      infoRow.appendChild(detectedSpan);
+
+      const rbxSpan = document.createElement('span');
+      rbxSpan.className = 'px-2 py-1 rounded bg-slate-800 opacity-90';
+      rbxSpan.textContent = `RBX Version: ${safe(exp.rbxversion || exp.rbx_version || exp.rbx)}`;
+      infoRow.appendChild(rbxSpan);
+
+      card.appendChild(infoRow);
+
+      const badgeRow = document.createElement('div');
+      badgeRow.className = 'flex flex-wrap gap-2 mb-4';
+
+      const priceBadge = document.createElement('span');
+      priceBadge.className = 'px-2 py-1 text-xs rounded bg-slate-800';
+      priceBadge.textContent = (typeof exp.free === 'boolean') ? (exp.free ? 'Free' : 'Paid') : (exp.free ? 'Free' : 'Paid');
+      badgeRow.appendChild(priceBadge);
+
+      if (exp.uncStatus || exp.keySystem || exp.key_system) {
+        const keyBadge = document.createElement('span');
+        keyBadge.className = 'px-2 py-1 text-xs rounded bg-indigo-700';
+        keyBadge.textContent = 'Key System';
+        badgeRow.appendChild(keyBadge);
+      }
+
+      if (suncPercentileText) {
+        const suncBadge = document.createElement('span');
+        suncBadge.className = 'px-2 py-1 text-xs rounded bg-purple-700';
+        suncBadge.textContent = `${suncPercentileText} Passed`;
+        badgeRow.appendChild(suncBadge);
+      }
+
+      const updateBadge = document.createElement('span');
+      updateBadge.className = `px-2 py-1 text-xs rounded ${statusType === 'green' ? 'bg-green-700' : 'bg-red-700'}`;
+      updateBadge.textContent = (exp.updateStatus ? 'Updated' : 'Not Updated');
+      badgeRow.appendChild(updateBadge);
+
+      card.appendChild(badgeRow);
+
+      const links = document.createElement('div');
+      links.className = 'flex gap-4';
+      const a1 = document.createElement('a');
+      a1.className = 'text-purple-400 text-sm underline';
+      a1.href = exp.websitelink || '#';
+      a1.target = '_blank';
+      a1.rel = 'noopener noreferrer';
+      a1.textContent = 'Website';
+      links.appendChild(a1);
+
+      const a2 = document.createElement('a');
+      a2.className = 'text-green-400 text-sm underline';
+      a2.href = exp.discordlink || '#';
+      a2.target = '_blank';
+      a2.rel = 'noopener noreferrer';
+      a2.textContent = 'Discord';
+      links.appendChild(a2);
+
+      card.appendChild(links);
+
+      card.addEventListener('click', () => {
+        openModal(exp.title || '', card.dataset.suncScrap, card.dataset.suncKey);
+      });
+
+      return card;
+    }
+
+    function renderDashboard(data) {
+      clearSections();
+      const sections = {
+        windowsExecutor: document.getElementById('windowsExecutor'),
+        macExecutor: document.getElementById('macExecutor'),
+        androidExecutor: document.getElementById('androidExecutor'),
+        iosExecutor: document.getElementById('iosExecutor'),
+        windowsExternal: document.getElementById('windowsExternal'),
+      };
+
+      if (!Array.isArray(data) || data.length === 0) {
+        document.getElementById('emptyState').classList.remove('hidden');
+        return;
+      } else {
+        document.getElementById('emptyState').classList.add('hidden');
+      }
+
+      data.forEach(exp => {
+        try {
+          const sectionId = categorize(exp);
+          const card = createCardElement(exp);
+          const target = sections[sectionId] || sections.windowsExecutor;
+          target.appendChild(card);
+        } catch (err) {
+          console.error('Render item failed', err, exp);
+        }
+      });
+    }
+
+    /* ---------- sUNC modal ---------- */
+    const suncModal = document.getElementById('suncModal');
+    const modalContent = document.getElementById('modalContent');
+    const modalTitle = document.getElementById('modalTitle');
+    document.getElementById('closeModal').addEventListener('click', () => suncModal.close());
+
+    async function openModal(title, scrap, key) {
+      modalTitle.textContent = title + ' sUNC Report';
+      modalContent.innerHTML = '<div class="opacity-60">Loading sUNC data…</div>';
+      try {
+        if (!scrap) {
+          modalContent.innerHTML = '<div class="text-yellow-300">No sUNC scrap identifier available for this executor.</div>';
+          suncModal.showModal();
+          return;
+        }
+        const endpoint = `/api/sunc?scrap=${encodeURIComponent(scrap)}&key=${encodeURIComponent(key || '')}`;
+        const data = await fetchWithFailover(endpoint);
+        const tests = data?.tests || { passed: [], failed: [] };
+        const passed = Array.isArray(tests.passed) ? tests.passed.length : 0;
+        const failed = Array.isArray(tests.failed) ? tests.failed.length : 0;
+
+        modalContent.innerHTML = `
+          <div>
+            <p class="text-green-400">✅ Passed: ${passed}</p>
+            <p class="text-red-400">❌ Failed: ${failed}</p>
+          </div>
+        `;
+
+        if (failed > 0 && Array.isArray(tests.failed)) {
+          const list = document.createElement('div');
+          list.className = 'mt-4 space-y-2 max-h-60 overflow-y-auto';
+          tests.failed.forEach(f => {
+            const item = document.createElement('div');
+            item.className = 'p-2 bg-red-950/30 rounded border border-red-900 text-xs';
+            const name = document.createElement('div');
+            name.className = 'font-semibold';
+            name.textContent = f.name || 'Failed test';
+            const reason = document.createElement('div');
+            reason.className = 'opacity-70';
+            reason.textContent = f.reason || JSON.stringify(f);
+            item.appendChild(name);
+            item.appendChild(reason);
+            list.appendChild(item);
+          });
+          modalContent.appendChild(list);
+        } else {
+          const ok = document.createElement('div');
+          ok.className = 'mt-4 text-sm opacity-80';
+          ok.textContent = 'No failed tests reported.';
+          modalContent.appendChild(ok);
+        }
+
+        suncModal.showModal();
+      } catch (err) {
+        modalContent.innerHTML = `<div class="text-red-400">Failed to load sUNC data: ${err.message}</div>`;
+        suncModal.showModal();
+      }
+    }
+
+    /* ---------- Section visibility helpers ---------- */
+    function updateSectionVisibility(filterValue) {
+      const map = {
+        windows: 'section-windows',
+        mac: 'section-mac',
+        android: 'section-android',
+        ios: 'section-ios',
+        external: 'section-external'
+      };
+
+      if (!filterValue || filterValue === 'all') {
+        Object.values(map).forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.classList.remove('hidden-section');
+        });
+        return;
+      }
+
+      Object.values(map).forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('hidden-section');
+      });
+      const showId = map[filterValue];
+      const showEl = document.getElementById(showId);
+      if (showEl) showEl.classList.remove('hidden-section');
+    }
+
+    function hideEmptySections() {
+      const sectionMap = {
+        windowsExecutor: 'section-windows',
+        macExecutor: 'section-mac',
+        androidExecutor: 'section-android',
+        iosExecutor: 'section-ios',
+        windowsExternal: 'section-external'
+      };
+      Object.keys(sectionMap).forEach(secId => {
+        const container = document.getElementById(secId);
+        const sectionEl = document.getElementById(sectionMap[secId]);
+        if (!container || !sectionEl) return;
+        const cards = Array.from(container.children).filter(c => c.tagName.toLowerCase() === 'article');
+        if (cards.length === 0) sectionEl.classList.add('hidden-section'); else sectionEl.classList.remove('hidden-section');
+      });
+    }
+
+    /* ---------- Filters & Search ---------- */
+    function applyFilters() {
+      const searchValue = document.getElementById('searchBar').value.trim().toLowerCase();
+      const filterValue = document.getElementById('filterSelect').value;
+
+      let filtered = allData.slice();
+
+      if (searchValue) filtered = filtered.filter(exp => (exp.title || '').toLowerCase().includes(searchValue));
+
+      if (filterValue && filterValue !== 'all') {
+        filtered = filtered.filter(exp => {
+          const cat = categorize(exp);
+          if (filterValue === 'windows') return cat === 'windowsExecutor';
+          if (filterValue === 'mac') return cat === 'macExecutor';
+          if (filterValue === 'android') return cat === 'androidExecutor';
+          if (filterValue === 'ios') return cat === 'iosExecutor';
+          if (filterValue === 'external') return cat === 'windowsExternal';
+          return true;
+        });
+      }
+
+      renderDashboard(filtered);
+      updateSectionVisibility(filterValue);
+      hideEmptySections();
+    }
+
+    document.getElementById('searchBar').addEventListener('input', () => applyFilters());
+    document.getElementById('filterSelect').addEventListener('change', () => applyFilters());
+
+    /* ---------- Load exploits ---------- */
+    async function loadDashboard() {
+      try {
+        allData = await fetchWithFailover('/api/status/exploits');
+        if (!Array.isArray(allData)) allData = [];
+        applyFilters();
+      } catch (err) {
+        clearSections();
+        document.getElementById('emptyState').classList.remove('hidden');
+        document.getElementById('emptyState').textContent = 'Failed to load data. Check network or API. ' + (err.hint || '');
+        console.error('Load dashboard failed', err);
+      }
+    }
+
+    // initial load + periodic refresh
+    loadDashboard();
+    loadAllRbxVersions();
+    setInterval(loadDashboard, 60000);
+    setInterval(loadAllRbxVersions, 120000);
+  </script>
+</body>
+</html>
